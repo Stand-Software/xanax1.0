@@ -1,6 +1,3 @@
--- Script Profissional Otimizado para Ricardo 💖
--- Foco: Correção Definitiva da UI, Aimbot via Mouse e Estabilidade Total
-
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -11,7 +8,7 @@ local camera = workspace.CurrentCamera
 local Hub = loadstring(game:HttpGet("https://raw.githubusercontent.com/Stand-Software/hub/refs/heads/main/README.md"))()
 
 local Window = Hub:CreateWindow({
-    Title = "XANAX ULTIMATE ESP 💖"
+    Title = "XANAX HUB"
 })
 
 local AimTab = Window:CreateTab("Aimbot")
@@ -33,10 +30,11 @@ local Settings = {
     MaxDistance = 500,
     -- Aimbot
     AimbotEnabled = false,
+    TeamCheck = false, -- Nova opção adicionada
     ShowFOV = false,
     FOVRadius = 100,
     FOVColor = Color3.fromRGB(255, 255, 255),
-    TargetPart = "Head", -- Alvo fixo na cabeça conforme solicitado
+    TargetPart = "Head", 
     AimKey = Enum.UserInputType.MouseButton2,
     AimDistance = 500,
     Smoothing = 2 
@@ -84,28 +82,41 @@ local function removeESP(p)
     end
 end
 
--- Função para pegar o alvo mais próximo do cursor dentro do FOV
+-- Função para pegar o alvo mais próximo fisicamente dentro do FOV
 local function getClosestPlayer()
     local target = nil
-    local shortestDistance = math.huge
+    local shortestDistance = math.huge -- Agora rastreamos a menor distância 3D (Magnitude)
     local mousePos = UserInputService:GetMouseLocation()
 
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= player and p.Character then
+            -- Lógica de Team Check
+            if Settings.TeamCheck and p.Team == player.Team then
+                continue
+            end
+
             local char = p.Character
             local part = char:FindFirstChild(Settings.TargetPart)
             local hum = char:FindFirstChild("Humanoid")
             local hrp = char:FindFirstChild("HumanoidRootPart")
 
             if part and hum and hum.Health > 0 and hrp then
+                -- Distância real entre você e o alvo
                 local mag = (hrp.Position - camera.CFrame.Position).Magnitude
+                
                 if mag <= Settings.AimDistance then
                     local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+                    
                     if onScreen then
                         local distFromMouse = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                        if distFromMouse <= Settings.FOVRadius and distFromMouse < shortestDistance then
-                            target = part
-                            shortestDistance = distFromMouse
+                        
+                        -- Verifica se está dentro do círculo do FOV
+                        if distFromMouse <= Settings.FOVRadius then
+                            -- Prioriza quem está mais perto fisicamente (menor Magnitude)
+                            if mag < shortestDistance then
+                                target = part
+                                shortestDistance = mag
+                            end
                         end
                     end
                 end
@@ -289,6 +300,12 @@ AimTab:CreateToggle({
 })
 
 AimTab:CreateToggle({
+    Name = "Verificar Time (Team Check)",
+    Default = false,
+    Callback = function(v) Settings.TeamCheck = v end
+})
+
+AimTab:CreateToggle({
     Name = "Ativar FOV (Círculo)",
     Default = false,
     Callback = function(v) Settings.ShowFOV = v end
@@ -300,10 +317,12 @@ AimTab:CreateKeybind({
     Callback = function(v) Settings.AimKey = v end
 })
 
-AimTab:CreateColorPicker({
-    Name = "Cor do Círculo FOV",
-    Default = Settings.FOVColor,
-    Callback = function(v) Settings.FOVColor = v end
+AimTab:CreateSlider({
+    Name = "Suavização (Smoothing)",
+    Min = 1, 
+    Max = 20, 
+    Default = 2,
+    Callback = function(v) Settings.Smoothing = v end
 })
 
 AimTab:CreateSlider({
@@ -322,12 +341,10 @@ AimTab:CreateSlider({
     Callback = function(v) Settings.AimDistance = v end
 })
 
-AimTab:CreateSlider({
-    Name = "Suavização (Smoothing)",
-    Min = 1, 
-    Max = 20, 
-    Default = 2,
-    Callback = function(v) Settings.Smoothing = v end
+AimTab:CreateColorPicker({
+    Name = "Cor do Círculo FOV",
+    Default = Settings.FOVColor,
+    Callback = function(v) Settings.FOVColor = v end
 })
 
 Tab:CreateLabel("Componentes Visuais")
@@ -340,5 +357,5 @@ Tab:CreateToggle({Name = "Show Usernames", Default = false, Callback = function(
 Tab:CreateLabel("Filtros")
 Tab:CreateToggle({Name = "Show Local Player", Default = false, Callback = function(v) Settings.LocalPlayer = v end})
 Tab:CreateLabel("Ajustes de Renderização")
-Tab:CreateColorPicker({Name = "Cor do ESP", Default = Settings.Color, Callback = function(v) Settings.Color = v end})
 Tab:CreateSlider({Name = "Alcance Máximo (m)", Min = 50, Max = 5000, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
+Tab:CreateColorPicker({Name = "Cor do ESP", Default = Settings.Color, Callback = function(v) Settings.Color = v end})
