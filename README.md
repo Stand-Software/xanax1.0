@@ -294,41 +294,41 @@ Players.PlayerRemoving:Connect(removeESP)
 
 -- --- INTERFACE
 AimTab:CreateToggle({
-    Name = "Ativar Aimbot",
+    Name = "Aimbot",
     Default = false,
     Callback = function(v) Settings.AimbotEnabled = v end
 })
 
 AimTab:CreateToggle({
-    Name = "Verificar Time (Team Check)",
-    Default = false,
-    Callback = function(v) Settings.TeamCheck = v end
-})
-
-AimTab:CreateToggle({
-    Name = "Ativar FOV (Círculo)",
+    Name = "Fov",
     Default = false,
     Callback = function(v) Settings.ShowFOV = v end
 })
 
+AimTab:CreateToggle({
+    Name = "Team Check",
+    Default = false,
+    Callback = function(v) Settings.TeamCheck = v end
+})
+
 AimTab:CreateKeybind({
-    Name = "Tecla para Segurar",
+    Name = "Keybind",
     Default = Enum.UserInputType.MouseButton2,
     Callback = function(v) Settings.AimKey = v end
 })
 
 AimTab:CreateSlider({
-    Name = "Suavização (Smoothing)",
+    Name = "Smoothing",
     Min = 1, 
-    Max = 20, 
+    Max = 10, 
     Default = 2,
     Callback = function(v) Settings.Smoothing = v end
 })
 
 AimTab:CreateSlider({
     Name = "Tamanho do FOV (Raio)",
-    Min = 10, 
-    Max = 600, 
+    Min = 50, 
+    Max = 500, 
     Default = 100,
     Callback = function(v) Settings.FOVRadius = v end
 })
@@ -336,7 +336,7 @@ AimTab:CreateSlider({
 AimTab:CreateSlider({
     Name = "Alcance do Aim (m)",
     Min = 50, 
-    Max = 5000, 
+    Max = 2000, 
     Default = 500,
     Callback = function(v) Settings.AimDistance = v end
 })
@@ -348,14 +348,14 @@ AimTab:CreateColorPicker({
 })
 
 Tab:CreateLabel("Componentes Visuais")
+Tab:CreateToggle({Name = "Usernames", Default = false, Callback = function(v) Settings.Names = v end})
 Tab:CreateToggle({Name = "Box Corner ESP", Default = false, Callback = function(v) Settings.Box = v end})
-Tab:CreateToggle({Name = "Health Bar (Vida)", Default = false, Callback = function(v) Settings.Health = v end})
-Tab:CreateToggle({Name = "Skeleton ESP (R6/R15)", Default = false, Callback = function(v) Settings.Skeleton = v end})
-Tab:CreateToggle({Name = "Tracers (Do Topo)", Default = false, Callback = function(v) Settings.Tracers = v end})
-Tab:CreateToggle({Name = "Show Distance", Default = false, Callback = function(v) Settings.Distance = v end})
-Tab:CreateToggle({Name = "Show Usernames", Default = false, Callback = function(v) Settings.Names = v end})
+Tab:CreateToggle({Name = "Health Bar", Default = false, Callback = function(v) Settings.Health = v end})
+Tab:CreateToggle({Name = "Skeleton", Default = false, Callback = function(v) Settings.Skeleton = v end})
+Tab:CreateToggle({Name = "Tracers", Default = false, Callback = function(v) Settings.Tracers = v end})
+Tab:CreateToggle({Name = "Distance", Default = false, Callback = function(v) Settings.Distance = v end})
 Tab:CreateLabel("Filtros")
 Tab:CreateToggle({Name = "Show Local Player", Default = false, Callback = function(v) Settings.LocalPlayer = v end})
 Tab:CreateLabel("Ajustes de Renderização")
-Tab:CreateSlider({Name = "Alcance Máximo (m)", Min = 50, Max = 5000, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
+Tab:CreateSlider({Name = "Alcance Máximo (M)", Min = 50, Max = 3500, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
 Tab:CreateColorPicker({Name = "Cor do ESP", Default = Settings.Color, Callback = function(v) Settings.Color = v end})
