@@ -5,9 +5,9 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- --- CONFIGURAÇÕES GERAIS (Unindo o melhor dos dois mundos) ---
+-- --- CONFIGURAÇÕES GERAIS ---
 local Settings = {
-    -- Aimbot (Vindo do script.lua)
+    -- Aimbot
     AimbotEnabled = false,
     TeamCheck = false,
     ShowFOV = false,
@@ -17,7 +17,7 @@ local Settings = {
     AimKey = Enum.UserInputType.MouseButton2,
     AimDistance = 500,
     Smoothing = 2,
-    -- ESP / Visuals (Vindo do script.lua)
+    -- ESP / Visuals
     Box = false,
     Skeleton = false,
     Tracers = false,
@@ -29,19 +29,22 @@ local Settings = {
     Thickness = 1,
     BoxThickness = 2,
     MaxDistance = 500,
-    -- Pessoal / Fly (Vindo do Canvas)
+    -- Pessoal / Fly
     FlyEnabled = false,
     IsFlying = false,
     FlySpeed = 20,
     FlyBoost = 350,
     FlyKey = Enum.KeyCode.CapsLock,
     InfJump = false,
-    -- Jogadores (Vindo do Canvas)
+    -- Jogadores
     SelectedPlayer = nil,
     PuxarLoop = false,
     SpectateEnabled = false,
     SpectateDist = 15,
-    SpectateRotation = 0
+    SpectateRotation = 0,
+    -- Misc (NOVO)
+    SpinbotEnabled = false,
+    SpinbotSpeed = 50
 }
 
 local Cache = {}
@@ -59,6 +62,7 @@ local AimTab = Window:CreateTab("Aimbot")
 local VisTab = Window:CreateTab("Visuals")
 local SelfTab = Window:CreateTab("Pessoal")
 local PlayersTab = Window:CreateTab("Jogadores")
+local MiscTab = Window:CreateTab("Misc") -- Criando a nova aba
 
 -- --- OBJETOS DE DESENHO (FOV) ---
 local FOVCircle = Drawing.new("Circle")
@@ -157,7 +161,7 @@ local function enableFly()
     end)
 end
 
--- --- LÓGICA AIMBOT (Vindo do script.lua) ---
+-- --- LÓGICA AIMBOT ---
 local function getClosestPlayer()
     local target = nil
     local shortestDistance = math.huge
@@ -338,7 +342,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Espectar (Canvas logic)
+    -- Espectar
     if Settings.SpectateEnabled and Settings.SelectedPlayer and Settings.SelectedPlayer.Character then
         local targetHead = Settings.SelectedPlayer.Character:FindFirstChild("Head")
         if targetHead then
@@ -351,11 +355,22 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- --- LÓGICA DO SPINBOT (Misc) ---
+task.spawn(function()
+    while true do
+        if Settings.SpinbotEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = player.Character.HumanoidRootPart
+            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(Settings.SpinbotSpeed), 0)
+        end
+        task.wait()
+    end
+end)
+
 Players.PlayerRemoving:Connect(removeESP)
 
 -- --- INTERFACE ---
 
--- AIMBOT (Baseado no script.lua)
+-- AIMBOT
 AimTab:CreateToggle({Name = "Aimbot", Default = false, Callback = function(v) Settings.AimbotEnabled = v end})
 AimTab:CreateToggle({Name = "Show FOV", Default = false, Callback = function(v) Settings.ShowFOV = v end})
 AimTab:CreateToggle({Name = "Team Check", Default = false, Callback = function(v) Settings.TeamCheck = v end})
@@ -365,7 +380,7 @@ AimTab:CreateSlider({Name = "Fov Radius", Min = 50, Max = 500, Default = 100, Ca
 AimTab:CreateSlider({Name = "Alcance do Aim (M)", Min = 50, Max = 2000, Default = 500, Callback = function(v) Settings.AimDistance = v end})
 AimTab:CreateColorPicker({Name = "Fov Color", Default = Settings.FOVColor, Callback = function(v) Settings.FOVColor = v end})
 
--- VISUALS (Baseado no script.lua)
+-- VISUALS
 VisTab:CreateLabel("Componentes Visuais")
 VisTab:CreateToggle({Name = "Usernames", Default = false, Callback = function(v) Settings.Names = v end})
 VisTab:CreateToggle({Name = "Box Corner", Default = false, Callback = function(v) Settings.Box = v end})
@@ -378,12 +393,12 @@ VisTab:CreateToggle({Name = "Show Local Player", Default = false, Callback = fun
 VisTab:CreateSlider({Name = "Alcance Máximo (M)", Min = 50, Max = 3500, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
 VisTab:CreateColorPicker({Name = "Cor do ESP", Default = Settings.ESPColor, Callback = function(v) Settings.ESPColor = v end})
 
--- PESSOAL / SELF (Canvas logic)
+-- PESSOAL / SELF
 SelfTab:CreateToggle({Name = "Fly", Default = false, Callback = function(v) Settings.FlyEnabled = v; if not v then disableFly() end end})
 SelfTab:CreateKeybind({Name = "Keybind", Default = Enum.KeyCode.CapsLock, Callback = function(key) Settings.FlyKey = key end})
 SelfTab:CreateSlider({Name = "Speed Fly", Min = 10, Max = 300, Default = 20, Callback = function(v) Settings.FlySpeed = v end})
 
--- JOGADORES / PLAYERS (Canvas logic)
+-- JOGADORES / PLAYERS
 local SelectedLabel = PlayersTab:CreateLabel("Selecionado: Nenhum")
 
 local PlayerGui = player:WaitForChild("PlayerGui")
@@ -435,6 +450,25 @@ PlayersTab:CreateButton({
 })
 PlayersTab:CreateToggle({Name = "Spectate", Default = false, Callback = function(v) Settings.SpectateEnabled = v end})
 PlayersTab:CreateToggle({Name = "Teleport To Me", Default = false, Callback = function(v) Settings.PuxarLoop = v end})
+
+-- MISC (NOVO)
+MiscTab:CreateLabel("Configurações Extras")
+MiscTab:CreateToggle({
+    Name = "Spinbot", 
+    Default = false, 
+    Callback = function(v) 
+        Settings.SpinbotEnabled = v 
+    end
+})
+MiscTab:CreateSlider({
+    Name = "Spin Velocity", 
+    Min = 10, 
+    Max = 300, 
+    Default = 50, 
+    Callback = function(v) 
+        Settings.SpinbotSpeed = v 
+    end
+})
 
 -- Loop de Puxar
 task.spawn(function()
