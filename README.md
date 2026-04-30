@@ -45,8 +45,9 @@ local Settings = {
     SpectateEnabled = false,
     SpectateDist = 15,
     SpectateRotation = 0,
-    EatPlayer = false,
-    -- Misc (NOVO)
+    FollowPlayer = false, -- Alterado de EatPlayer para FollowPlayer
+    EatPlayer = false,    -- Nova função com movimento
+    -- Misc
     SpinbotEnabled = false,
     SpinbotSpeed = 50
 }
@@ -102,7 +103,7 @@ local AimTab = Window:CreateTab("Aimbot")
 local VisTab = Window:CreateTab("Visuals")
 local SelfTab = Window:CreateTab("Pessoal")
 local PlayersTab = Window:CreateTab("Jogadores")
-local MiscTab = Window:CreateTab("Misc") -- Criando a nova aba
+local MiscTab = Window:CreateTab("Misc")
 
 -- --- OBJETOS DE DESENHO (FOV) ---
 local FOVCircle = Drawing.new("Circle")
@@ -458,15 +459,31 @@ task.spawn(function()
     end
 end)
 
--- --- LÓGICA DO COMER PLAYER (Eat Player) ---
+-- --- LÓGICA DO SEGUIR PLAYER (Follow Player) ---
+task.spawn(function()
+    while not isUnloaded do
+        if Settings.FollowPlayer and Settings.SelectedPlayer and Settings.SelectedPlayer.Character and player.Character then
+            local myHrp = player.Character:FindFirstChild("HumanoidRootPart")
+            local targetHrp = Settings.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myHrp and targetHrp then
+                -- Fica parado atrás da pessoa
+                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.5)
+            end
+        end
+        task.wait()
+    end
+end)
+
+-- --- LÓGICA DO COMER PLAYER (Eat Player - Movimento Oscilante) ---
 task.spawn(function()
     while not isUnloaded do
         if Settings.EatPlayer and Settings.SelectedPlayer and Settings.SelectedPlayer.Character and player.Character then
             local myHrp = player.Character:FindFirstChild("HumanoidRootPart")
             local targetHrp = Settings.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
             if myHrp and targetHrp then
-                -- Fica bem colado atrás da pessoa (Z = 1.5 a 2)
-                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.5)
+                -- Movimento de vai e vem (oscilação no eixo Z)
+                local s = math.sin(tick() * 25) * 0.7 -- Ajuste o 25 para velocidade e 0.7 para distância
+                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.3 + s)
             end
         end
         task.wait()
@@ -552,9 +569,10 @@ PlayersTab:CreateButton({
 })
 PlayersTab:CreateToggle({Name = "Spectate", Flag = "SpectateEnabled", Default = false, Callback = function(v) Settings.SpectateEnabled = v end})
 PlayersTab:CreateToggle({Name = "Teleport To Me", Flag = "PuxarLoop", Default = false, Callback = function(v) Settings.PuxarLoop = v end})
+PlayersTab:CreateToggle({Name = "Seguir Player", Flag = "FollowPlayer", Default = false, Callback = function(v) Settings.FollowPlayer = v end})
 PlayersTab:CreateToggle({Name = "Comer Player", Flag = "EatPlayer", Default = false, Callback = function(v) Settings.EatPlayer = v end})
 
--- MISC (NOVO)
+-- MISC
 MiscTab:CreateLabel("Configurações Extras")
 MiscTab:CreateToggle({
     Name = "Spinbot", 
