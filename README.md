@@ -2,6 +2,7 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
@@ -9,6 +10,7 @@ local camera = workspace.CurrentCamera
 local Settings = {
     -- Aimbot
     AimbotEnabled = false,
+    AimMethod = "Mouse",
     TeamCheck = false,
     ShowFOV = false,
     FOVRadius = 100,
@@ -19,6 +21,7 @@ local Settings = {
     Smoothing = 2,
     -- ESP / Visuals
     Box = false,
+    BoxMode = "2D",
     Skeleton = false,
     Tracers = false,
     Distance = false,
@@ -42,6 +45,7 @@ local Settings = {
     SpectateEnabled = false,
     SpectateDist = 15,
     SpectateRotation = 0,
+    EatPlayer = false,
     -- Misc (NOVO)
     SpinbotEnabled = false,
     SpinbotSpeed = 50
@@ -50,9 +54,45 @@ local Settings = {
 local Cache = {}
 local isAiming = false
 local bodyVelocity, bodyGyro, flyConnection
+local isUnloaded = false
+local Hub = nil
+
+local function SaveConfig()
+    local save = {}
+    for k, v in pairs(Settings) do
+        if typeof(v) == "Color3" then
+            save[k] = {Type = "Color3", R = v.R, G = v.G, B = v.B}
+        elseif typeof(v) == "EnumItem" then
+            save[k] = {Type = "EnumItem", EnumType = tostring(v.EnumType), Name = v.Name}
+        elseif type(v) ~= "userdata" and type(v) ~= "function" and type(v) ~= "table" then
+            save[k] = v
+        end
+    end
+    if writefile then
+        writefile("XanaxHub_Config.json", HttpService:JSONEncode(save))
+    end
+end
+
+local function LoadConfig()
+    if isfile and isfile("XanaxHub_Config.json") then
+        local s, data = pcall(function() return HttpService:JSONDecode(readfile("XanaxHub_Config.json")) end)
+        if s and type(data) == "table" then
+            for k, v in pairs(data) do
+                if type(v) == "table" and v.Type == "Color3" then
+                    Settings[k] = Color3.new(v.R, v.G, v.B)
+                elseif type(v) == "table" and v.Type == "EnumItem" then
+                    pcall(function() Settings[k] = Enum[tostring(v.EnumType)][v.Name] end)
+                else
+                    Settings[k] = v
+                end
+            end
+            if Hub and Hub.UpdateFlags then Hub:UpdateFlags(Settings) end
+        end
+    end
+end
 
 -- Carregando a Lib do Hub
-local Hub = loadstring(game:HttpGet("https://raw.githubusercontent.com/Stand-Software/hub/refs/heads/main/README.md"))()
+Hub = loadstring(game:HttpGet("https://raw.githubusercontent.com/Stand-Software/hub/refs/heads/main/README.md"))()
 
 local Window = Hub:CreateWindow({
     Title = "Xanax Hub"
@@ -197,7 +237,7 @@ local function getClosestPlayer()
 end
 
 -- Detecção de Input
-UserInputService.InputBegan:Connect(function(input, gpe)
+local inputBeganConn = UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.UserInputType == Settings.AimKey or input.KeyCode == Settings.AimKey then isAiming = true end
     
@@ -207,7 +247,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
+local inputEndedConn = UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Settings.AimKey or input.KeyCode == Settings.AimKey then isAiming = false end
 end)
 
@@ -226,7 +266,7 @@ local Bones = {
 }
 
 -- --- LOOP PRINCIPAL (RENDER STEPPED) ---
-RunService.RenderStepped:Connect(function()
+local renderConn = RunService.RenderStepped:Connect(function()
     -- FOV Circle
     FOVCircle.Visible = Settings.ShowFOV
     FOVCircle.Radius = Settings.FOVRadius
@@ -239,10 +279,14 @@ RunService.RenderStepped:Connect(function()
         if target then
             local screenPos, onScreen = camera:WorldToViewportPoint(target.Position)
             if onScreen then
-                local mousePos = UserInputService:GetMouseLocation()
-                local moveX = (screenPos.X - mousePos.X) / Settings.Smoothing
-                local moveY = (screenPos.Y - mousePos.Y) / Settings.Smoothing
-                if mousemoverel then mousemoverel(moveX, moveY) end
+                if Settings.AimMethod == "Mouse" then
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local moveX = (screenPos.X - mousePos.X) / Settings.Smoothing
+                    local moveY = (screenPos.Y - mousePos.Y) / Settings.Smoothing
+                    if mousemoverel then mousemoverel(moveX, moveY) end
+                elseif Settings.AimMethod == "Camera" then
+                    camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, target.Position), 1 / Settings.Smoothing)
+                end
             end
         end
     end
@@ -265,6 +309,8 @@ RunService.RenderStepped:Connect(function()
                         if not Cache[p] then
                             Cache[p] = {
                                 Box = {
+                                    createDrawing("Line",{}), createDrawing("Line",{}),
+                                    createDrawing("Line",{}), createDrawing("Line",{}),
                                     createDrawing("Line",{}), createDrawing("Line",{}),
                                     createDrawing("Line",{}), createDrawing("Line",{}),
                                     createDrawing("Line",{}), createDrawing("Line",{}),
@@ -291,17 +337,62 @@ RunService.RenderStepped:Connect(function()
                             local l = width / 4
 
                             if Settings.Box then
-                                local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
                                 local box = data.Box
-                                box[1].From = tl; box[1].To = tl + Vector2.new(l, 0)
-                                box[2].From = tl; box[2].To = tl + Vector2.new(0, l)
-                                box[3].From = tr; box[3].To = tr - Vector2.new(l, 0)
-                                box[4].From = tr; box[4].To = tr + Vector2.new(0, l)
-                                box[5].From = bl; box[5].To = bl + Vector2.new(l, 0)
-                                box[6].From = bl; box[6].To = bl - Vector2.new(0, l)
-                                box[7].From = br; box[7].To = br - Vector2.new(l, 0)
-                                box[8].From = br; box[8].To = br - Vector2.new(0, l)
-                                for _, line in pairs(box) do line.Visible = true; line.Color = Settings.ESPColor; line.Thickness = Settings.BoxThickness end
+                                if Settings.BoxMode == "3D" then
+                                    local cframe, size = char:GetBoundingBox()
+                                    if size.Magnitude == 0 then size = Vector3.new(4, 5.5, 4) end
+                                    local c = {
+                                        cframe * CFrame.new(size.X/2, size.Y/2, size.Z/2),
+                                        cframe * CFrame.new(-size.X/2, size.Y/2, size.Z/2),
+                                        cframe * CFrame.new(-size.X/2, -size.Y/2, size.Z/2),
+                                        cframe * CFrame.new(size.X/2, -size.Y/2, size.Z/2),
+                                        cframe * CFrame.new(size.X/2, size.Y/2, -size.Z/2),
+                                        cframe * CFrame.new(-size.X/2, size.Y/2, -size.Z/2),
+                                        cframe * CFrame.new(-size.X/2, -size.Y/2, -size.Z/2),
+                                        cframe * CFrame.new(size.X/2, -size.Y/2, -size.Z/2)
+                                    }
+                                    
+                                    local pts = {}
+                                    local allOnScreen = true
+                                    for i=1, 8 do
+                                        local pt, on = camera:WorldToViewportPoint(c[i].Position)
+                                        pts[i] = Vector2.new(pt.X, pt.Y)
+                                        if not on or pt.Z < 0 then allOnScreen = false end
+                                    end
+                                    
+                                    if allOnScreen then
+                                        local edges = {
+                                            {1,2}, {2,3}, {3,4}, {4,1},
+                                            {5,6}, {6,7}, {7,8}, {8,5},
+                                            {1,5}, {2,6}, {3,7}, {4,8}
+                                        }
+                                        for i=1, 12 do
+                                            box[i].From = pts[edges[i][1]]
+                                            box[i].To = pts[edges[i][2]]
+                                            box[i].Visible = true
+                                            box[i].Color = Settings.ESPColor
+                                            box[i].Thickness = Settings.BoxThickness
+                                        end
+                                    else
+                                        for i=1, 12 do box[i].Visible = false end
+                                    end
+                                else
+                                    local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
+                                    box[1].From = tl; box[1].To = tl + Vector2.new(l, 0)
+                                    box[2].From = tl; box[2].To = tl + Vector2.new(0, l)
+                                    box[3].From = tr; box[3].To = tr - Vector2.new(l, 0)
+                                    box[4].From = tr; box[4].To = tr + Vector2.new(0, l)
+                                    box[5].From = bl; box[5].To = bl + Vector2.new(l, 0)
+                                    box[6].From = bl; box[6].To = bl - Vector2.new(0, l)
+                                    box[7].From = br; box[7].To = br - Vector2.new(l, 0)
+                                    box[8].From = br; box[8].To = br - Vector2.new(0, l)
+                                    for i=1, 8 do 
+                                        box[i].Visible = true
+                                        box[i].Color = Settings.ESPColor
+                                        box[i].Thickness = Settings.BoxThickness 
+                                    end
+                                    for i=9, 12 do box[i].Visible = false end
+                                end
                             end
 
                             if Settings.Health then
@@ -344,20 +435,21 @@ RunService.RenderStepped:Connect(function()
 
     -- Espectar
     if Settings.SpectateEnabled and Settings.SelectedPlayer and Settings.SelectedPlayer.Character then
-        local targetHead = Settings.SelectedPlayer.Character:FindFirstChild("Head")
-        if targetHead then
-            camera.CameraType = Enum.CameraType.Scriptable
-            local rot = CFrame.Angles(0, math.rad(Settings.SpectateRotation), 0)
-            camera.CFrame = CFrame.new((targetHead.CFrame * rot * CFrame.new(0, 0, Settings.SpectateDist)).Position, targetHead.Position)
+        local targetHum = Settings.SelectedPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if targetHum and camera.CameraSubject ~= targetHum then
+            camera.CameraSubject = targetHum
         end
-    elseif not Settings.SpectateEnabled and camera.CameraType == Enum.CameraType.Scriptable then
-        camera.CameraType = Enum.CameraType.Custom
+    elseif not Settings.SpectateEnabled then
+        local myHum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if myHum and camera.CameraSubject ~= myHum then
+            camera.CameraSubject = myHum
+        end
     end
 end)
 
 -- --- LÓGICA DO SPINBOT (Misc) ---
 task.spawn(function()
-    while true do
+    while not isUnloaded do
         if Settings.SpinbotEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local hrp = player.Character.HumanoidRootPart
             hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(Settings.SpinbotSpeed), 0)
@@ -366,80 +458,90 @@ task.spawn(function()
     end
 end)
 
-Players.PlayerRemoving:Connect(removeESP)
+-- --- LÓGICA DO COMER PLAYER (Eat Player) ---
+task.spawn(function()
+    while not isUnloaded do
+        if Settings.EatPlayer and Settings.SelectedPlayer and Settings.SelectedPlayer.Character and player.Character then
+            local myHrp = player.Character:FindFirstChild("HumanoidRootPart")
+            local targetHrp = Settings.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myHrp and targetHrp then
+                -- Fica bem colado atrás da pessoa (Z = 1.5 a 2)
+                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.5)
+            end
+        end
+        task.wait()
+    end
+end)
+
+local playerRemovedConn = Players.PlayerRemoving:Connect(removeESP)
 
 -- --- INTERFACE ---
 
 -- AIMBOT
-AimTab:CreateToggle({Name = "Aimbot", Default = false, Callback = function(v) Settings.AimbotEnabled = v end})
-AimTab:CreateToggle({Name = "Show FOV", Default = false, Callback = function(v) Settings.ShowFOV = v end})
-AimTab:CreateToggle({Name = "Team Check", Default = false, Callback = function(v) Settings.TeamCheck = v end})
-AimTab:CreateKeybind({Name = "Keybind", Default = Enum.UserInputType.MouseButton2, Callback = function(v) Settings.AimKey = v end})
-AimTab:CreateSlider({Name = "Smoothing", Min = 1, Max = 10, Default = 2, Callback = function(v) Settings.Smoothing = v end})
-AimTab:CreateSlider({Name = "Fov Radius", Min = 50, Max = 500, Default = 100, Callback = function(v) Settings.FOVRadius = v end})
-AimTab:CreateSlider({Name = "Alcance do Aim (M)", Min = 50, Max = 2000, Default = 500, Callback = function(v) Settings.AimDistance = v end})
-AimTab:CreateColorPicker({Name = "Fov Color", Default = Settings.FOVColor, Callback = function(v) Settings.FOVColor = v end})
+AimTab:CreateToggle({Name = "Aimbot", Flag = "AimbotEnabled", Default = false, Callback = function(v) Settings.AimbotEnabled = v end})
+AimTab:CreateDropdown({Name = "Aim Method", Flag = "AimMethod", Options = {"Mouse", "Camera"}, Default = "Mouse", Callback = function(v) Settings.AimMethod = v end})
+AimTab:CreateToggle({Name = "Show FOV", Flag = "ShowFOV", Default = false, Callback = function(v) Settings.ShowFOV = v end})
+AimTab:CreateToggle({Name = "Team Check", Flag = "TeamCheck", Default = false, Callback = function(v) Settings.TeamCheck = v end})
+AimTab:CreateKeybind({Name = "Keybind", Flag = "AimKey", Default = Enum.UserInputType.MouseButton2, Callback = function(v) Settings.AimKey = v end})
+AimTab:CreateSlider({Name = "Smoothing", Flag = "Smoothing", Min = 1, Max = 10, Default = 2, Callback = function(v) Settings.Smoothing = v end})
+AimTab:CreateSlider({Name = "Fov Radius", Flag = "FOVRadius", Min = 50, Max = 500, Default = 100, Callback = function(v) Settings.FOVRadius = v end})
+AimTab:CreateSlider({Name = "Alcance do Aim (M)", Flag = "AimDistance", Min = 50, Max = 2000, Default = 500, Callback = function(v) Settings.AimDistance = v end})
+AimTab:CreateColorPicker({Name = "Fov Color", Flag = "FOVColor", Default = Settings.FOVColor, Callback = function(v) Settings.FOVColor = v end})
 
 -- VISUALS
 VisTab:CreateLabel("Componentes Visuais")
-VisTab:CreateToggle({Name = "Usernames", Default = false, Callback = function(v) Settings.Names = v end})
-VisTab:CreateToggle({Name = "Box Corner", Default = false, Callback = function(v) Settings.Box = v end})
-VisTab:CreateToggle({Name = "Health Bar", Default = false, Callback = function(v) Settings.Health = v end})
-VisTab:CreateToggle({Name = "Skeleton", Default = false, Callback = function(v) Settings.Skeleton = v end})
-VisTab:CreateToggle({Name = "Tracers", Default = false, Callback = function(v) Settings.Tracers = v end})
-VisTab:CreateToggle({Name = "Distance", Default = false, Callback = function(v) Settings.Distance = v end})
+VisTab:CreateToggle({Name = "Usernames", Flag = "Names", Default = false, Callback = function(v) Settings.Names = v end})
+VisTab:CreateToggle({Name = "Box ESP", Flag = "Box", Default = false, Callback = function(v) Settings.Box = v end})
+VisTab:CreateDropdown({Name = "Box Mode", Flag = "BoxMode", Options = {"2D", "3D"}, Default = "2D", Callback = function(v) Settings.BoxMode = v end})
+VisTab:CreateToggle({Name = "Health Bar", Flag = "Health", Default = false, Callback = function(v) Settings.Health = v end})
+VisTab:CreateToggle({Name = "Skeleton", Flag = "Skeleton", Default = false, Callback = function(v) Settings.Skeleton = v end})
+VisTab:CreateToggle({Name = "Tracers", Flag = "Tracers", Default = false, Callback = function(v) Settings.Tracers = v end})
+VisTab:CreateToggle({Name = "Distance", Flag = "Distance", Default = false, Callback = function(v) Settings.Distance = v end})
 VisTab:CreateLabel("Filtros")
-VisTab:CreateToggle({Name = "Show Local Player", Default = false, Callback = function(v) Settings.LocalPlayer = v end})
-VisTab:CreateSlider({Name = "Alcance Máximo (M)", Min = 50, Max = 3500, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
-VisTab:CreateColorPicker({Name = "Cor do ESP", Default = Settings.ESPColor, Callback = function(v) Settings.ESPColor = v end})
+VisTab:CreateToggle({Name = "Show Local Player", Flag = "LocalPlayer", Default = false, Callback = function(v) Settings.LocalPlayer = v end})
+VisTab:CreateSlider({Name = "Alcance Máximo (M)", Flag = "MaxDistance", Min = 50, Max = 3500, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
+VisTab:CreateColorPicker({Name = "Cor do ESP", Flag = "ESPColor", Default = Settings.ESPColor, Callback = function(v) Settings.ESPColor = v end})
 
 -- PESSOAL / SELF
-SelfTab:CreateToggle({Name = "Fly", Default = false, Callback = function(v) Settings.FlyEnabled = v; if not v then disableFly() end end})
-SelfTab:CreateKeybind({Name = "Keybind", Default = Enum.KeyCode.CapsLock, Callback = function(key) Settings.FlyKey = key end})
-SelfTab:CreateSlider({Name = "Speed Fly", Min = 10, Max = 300, Default = 20, Callback = function(v) Settings.FlySpeed = v end})
+SelfTab:CreateToggle({Name = "Fly", Flag = "FlyEnabled", Default = false, Callback = function(v) Settings.FlyEnabled = v; if not v then disableFly() end end})
+SelfTab:CreateKeybind({Name = "Keybind", Flag = "FlyKey", Default = Enum.KeyCode.CapsLock, Callback = function(key) Settings.FlyKey = key end})
+SelfTab:CreateSlider({Name = "Speed Fly", Flag = "FlySpeed", Min = 10, Max = 300, Default = 20, Callback = function(v) Settings.FlySpeed = v end})
 
 -- JOGADORES / PLAYERS
-local SelectedLabel = PlayersTab:CreateLabel("Selecionado: Nenhum")
-
-local PlayerGui = player:WaitForChild("PlayerGui")
-local ListGui = create("ScreenGui", {Name = "Xanax_PlayerList", ResetOnSpawn = false, Parent = game:GetService("CoreGui") or PlayerGui})
-local MainFrame = create("Frame", {Size = UDim2.new(0, 300, 0, 450), Position = UDim2.new(0.5, 380, 0.5, -225), BackgroundColor3 = Color3.fromRGB(18, 18, 22), Visible = false, Parent = ListGui})
-create("UICorner", {CornerRadius = UDim.new(0, 10), Parent = MainFrame})
-create("UIStroke", {Color = Color3.fromRGB(35, 35, 40), Thickness = 1.5, Parent = MainFrame})
-
--- Arrastar Frame
-local dragging, dragInput, dragStart, startPos
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-    end
-end)
-MainFrame.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-local Scroll = create("ScrollingFrame", {Size = UDim2.new(1, -20, 1, -70), Position = UDim2.new(0, 10, 0, 55), BackgroundTransparency = 1, Parent = MainFrame})
-create("UIListLayout", {Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = Scroll})
-
-local function RefreshList()
-    for _, child in pairs(Scroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-    for _, p in pairs(Players:GetPlayers()) do
-        if p == player then continue end
-        local btn = create("TextButton", {Size = UDim2.new(1, -5, 0, 38), BackgroundColor3 = Color3.fromRGB(25, 25, 30), Text = p.DisplayName or p.Name, TextColor3 = Color3.new(1,1,1), Parent = Scroll})
-        create("UICorner", {CornerRadius = UDim.new(0, 6), Parent = btn})
-        btn.MouseButton1Click:Connect(function()
-            Settings.SelectedPlayer = p
-            SelectedLabel:SetText("Selecionado: " .. (p.DisplayName or p.Name))
-        end)
-    end
-    Scroll.CanvasSize = UDim2.new(0, 0, 0, Scroll.UIListLayout.AbsoluteContentSize.Y + 10)
+local playerOptions = {"Nenhum"}
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= player then table.insert(playerOptions, p.DisplayName or p.Name) end
 end
 
-PlayersTab:CreateButton({Name = "Show/Close Players List", Callback = function() MainFrame.Visible = not MainFrame.Visible; if MainFrame.Visible then RefreshList() end end})
+local PlayerDropdown = PlayersTab:CreateDropdown({
+    Name = "Select Player",
+    Options = playerOptions,
+    Default = "Nenhum",
+    Callback = function(v)
+        if v == "Nenhum" then
+            Settings.SelectedPlayer = nil
+        else
+            for _, p in pairs(Players:GetPlayers()) do
+                if (p.DisplayName == v or p.Name == v) and p ~= player then
+                    Settings.SelectedPlayer = p
+                    break
+                end
+            end
+        end
+    end
+})
+
+PlayersTab:CreateButton({
+    Name = "Refresh Player List",
+    Callback = function()
+        local newOpts = {"Nenhum"}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player then table.insert(newOpts, p.DisplayName or p.Name) end
+        end
+        PlayerDropdown:Refresh(newOpts)
+    end
+})
+
 PlayersTab:CreateButton({
     Name = "Teleport",
     Callback = function()
@@ -448,13 +550,15 @@ PlayersTab:CreateButton({
         end
     end
 })
-PlayersTab:CreateToggle({Name = "Spectate", Default = false, Callback = function(v) Settings.SpectateEnabled = v end})
-PlayersTab:CreateToggle({Name = "Teleport To Me", Default = false, Callback = function(v) Settings.PuxarLoop = v end})
+PlayersTab:CreateToggle({Name = "Spectate", Flag = "SpectateEnabled", Default = false, Callback = function(v) Settings.SpectateEnabled = v end})
+PlayersTab:CreateToggle({Name = "Teleport To Me", Flag = "PuxarLoop", Default = false, Callback = function(v) Settings.PuxarLoop = v end})
+PlayersTab:CreateToggle({Name = "Comer Player", Flag = "EatPlayer", Default = false, Callback = function(v) Settings.EatPlayer = v end})
 
 -- MISC (NOVO)
 MiscTab:CreateLabel("Configurações Extras")
 MiscTab:CreateToggle({
     Name = "Spinbot", 
+    Flag = "SpinbotEnabled",
     Default = false, 
     Callback = function(v) 
         Settings.SpinbotEnabled = v 
@@ -462,6 +566,7 @@ MiscTab:CreateToggle({
 })
 MiscTab:CreateSlider({
     Name = "Spin Velocity", 
+    Flag = "SpinbotSpeed",
     Min = 10, 
     Max = 300, 
     Default = 50, 
@@ -470,9 +575,38 @@ MiscTab:CreateSlider({
     end
 })
 
+MiscTab:CreateLabel("Configurações")
+MiscTab:CreateButton({Name = "Save Config", Callback = SaveConfig})
+MiscTab:CreateButton({Name = "Load Config", Callback = LoadConfig})
+
+MiscTab:CreateButton({
+    Name = "Unload Hub",
+    Callback = function()
+        isUnloaded = true
+        if renderConn then renderConn:Disconnect() end
+        if inputBeganConn then inputBeganConn:Disconnect() end
+        if inputEndedConn then inputEndedConn:Disconnect() end
+        if playerRemovedConn then playerRemovedConn:Disconnect() end
+        
+        disableFly()
+        for _, data in pairs(Cache) do hideAll(data) end
+        Cache = {}
+        
+        if FOVCircle then FOVCircle:Remove() end
+        
+        local coreGui = game:GetService("CoreGui")
+        local pg = player:FindFirstChild("PlayerGui")
+        
+        local hubGui = coreGui:FindFirstChild("XanaxHub_V2") or (pg and pg:FindFirstChild("XanaxHub_V2"))
+        if hubGui then hubGui:Destroy() end
+        
+        camera.CameraType = Enum.CameraType.Custom
+    end
+})
+
 -- Loop de Puxar
 task.spawn(function()
-    while true do
+    while not isUnloaded do
         if Settings.PuxarLoop and Settings.SelectedPlayer and Settings.SelectedPlayer.Character then
             local targetHRP = Settings.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
             local myHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
