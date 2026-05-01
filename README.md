@@ -23,7 +23,7 @@ local Settings = {
     -- ESP / Visuals
     Box = false,
     BoxMode = "2D",
-    BoxStyle = "Cornered", -- NOVO: "Cornered" ou "Full"
+    BoxStyle = "Cornered", 
     Skeleton = false,
     Tracers = false,
     Distance = false,
@@ -35,26 +35,29 @@ local Settings = {
     Thickness = 1,
     BoxThickness = 2,
     MaxDistance = 500,
-    -- Pessoal / Fly
+    -- Exploits / Fly
     FlyEnabled = false,
     IsFlying = false,
     FlySpeed = 20,
     FlyBoost = 350,
     FlyKey = Enum.KeyCode.CapsLock,
+    FlyInvisible = false,
     InfJump = false,
-    -- Jogadores
+    -- Players
     SelectedPlayer = nil,
     PuxarLoop = false,
     SpectateEnabled = false,
     SpectateDist = 15,
     SpectateRotation = 0,
-    EatPlayer = false,
+    FollowPlayer = false, -- Renomeado
+    EatPlayer = false, -- Nova funcionalidade
     -- Misc
     SpinbotEnabled = false,
     SpinbotSpeed = 50
 }
 
 local Cache = {}
+local NPCCacheList = {} -- Cache otimizado para NPCs
 local isAiming = false
 local bodyVelocity, bodyGyro, flyConnection
 local isUnloaded = false
@@ -62,12 +65,33 @@ local Hub = nil
 
 -- --- FUNÇÕES DE AUXÍLIO PARA NPCs ---
 local function IsNPC(model)
+    if not model:IsA("Model") then return false end
     if Players:GetPlayerFromCharacter(model) then return false end
-    if model:IsA("Model") and model:FindFirstChildOfClass("Humanoid") and model:FindFirstChild("HumanoidRootPart") then
+    if model:FindFirstChildOfClass("Humanoid") and model:FindFirstChild("HumanoidRootPart") then
         return true
     end
     return false
 end
+
+-- Loop de atualização de cache de NPCs (Evita o crash de GetDescendants no loop principal)
+task.spawn(function()
+    while not isUnloaded do
+        local tempNPCs = {}
+        -- Procura em lugares comuns para NPCs para ser mais rápido que GetDescendants
+        for _, obj in pairs(workspace:GetChildren()) do
+            if IsNPC(obj) then
+                table.insert(tempNPCs, obj)
+            elseif obj:IsA("Folder") or obj:IsA("Model") then
+                -- Checa um nível abaixo para NPCs dentro de pastas/grupos
+                for _, sub in pairs(obj:GetChildren()) do
+                    if IsNPC(sub) then table.insert(tempNPCs, sub) end
+                end
+            end
+        end
+        NPCCacheList = tempNPCs
+        task.wait(2) -- Atualiza a lista a cada 2 segundos
+    end
+end)
 
 local function GetValidTargets(includePlayers, includeNPCs)
     local targets = {}
@@ -81,9 +105,9 @@ local function GetValidTargets(includePlayers, includeNPCs)
     end
     
     if includeNPCs then
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") and IsNPC(obj) then
-                table.insert(targets, {Character = obj, Player = nil})
+        for _, npc in pairs(NPCCacheList) do
+            if npc and npc.Parent then
+                table.insert(targets, {Character = npc, Player = nil})
             end
         end
     end
@@ -135,8 +159,8 @@ local Window = Hub:CreateWindow({
 
 local AimTab = Window:CreateTab("Aimbot")
 local VisTab = Window:CreateTab("Visuals")
-local SelfTab = Window:CreateTab("Pessoal")
-local PlayersTab = Window:CreateTab("Jogadores")
+local SelfTab = Window:CreateTab("Exploits")
+local PlayersTab = Window:CreateTab("Players")
 local MiscTab = Window:CreateTab("Misc")
 
 -- --- OBJETOS DE DESENHO (FOV) ---
@@ -178,6 +202,18 @@ local function removeESP(id)
     end
 end
 
+-- --- LÓGICA DE VISIBILIDADE (Para Fly Invisible) ---
+local function updateCharacterVisibility()
+    local char = player.Character
+    if not char then return end
+    local transparencyValue = (Settings.IsFlying and Settings.FlyInvisible) and 1 or 0
+    for _, part in ipairs(char:GetDescendants()) do
+        if (part:IsA("BasePart") and part.Name ~= "HumanoidRootPart") or part:IsA("Decal") then
+            part.Transparency = transparencyValue
+        end
+    end
+end
+
 -- --- LÓGICA VOO (FLY) ---
 local function disableFly()
     Settings.IsFlying = false
@@ -192,6 +228,7 @@ local function disableFly()
             if part:IsA("BasePart") then part.CanCollide = true end
         end
     end
+    updateCharacterVisibility()
 end
 
 local function enableFly()
@@ -209,6 +246,8 @@ local function enableFly()
     bodyGyro.P = 1000
     bodyGyro.D = 100
     bodyGyro.Parent = root
+
+    updateCharacterVisibility()
 
     flyConnection = RunService.Heartbeat:Connect(function()
         if not Settings.IsFlying then return end
@@ -234,16 +273,12 @@ end
 local function getClosestTarget()
     local target = nil
     local shortestDistance = math.huge
-    
-    -- Se o método for Camera, a origem da detecção é o centro da tela
     local detectionOrigin = (Settings.AimMethod == "Camera") and (camera.ViewportSize / 2) or UserInputService:GetMouseLocation()
-
     local potentialTargets = GetValidTargets(true, Settings.AimbotNPCs)
 
     for _, data in pairs(potentialTargets) do
         local char = data.Character
         local p = data.Player
-        
         if p and Settings.TeamCheck and p.Team == player.Team then continue end
 
         local part = char:FindFirstChild(Settings.TargetPart)
@@ -304,7 +339,6 @@ local renderConn = RunService.RenderStepped:Connect(function()
     FOVCircle.Radius = Settings.FOVRadius
     FOVCircle.Color = Settings.FOVColor
     
-    -- Ajuste da posição do FOV baseado no método
     if Settings.AimMethod == "Camera" then
         FOVCircle.Position = camera.ViewportSize / 2
     else
@@ -394,7 +428,6 @@ local renderConn = RunService.RenderStepped:Connect(function()
                                     cframe * CFrame.new(-size.X/2, -size.Y/2, -size.Z/2),
                                     cframe * CFrame.new(size.X/2, -size.Y/2, -size.Z/2)
                                 }
-                                
                                 local pts = {}
                                 local allOnScreen = true
                                 for i=1, 8 do
@@ -402,7 +435,6 @@ local renderConn = RunService.RenderStepped:Connect(function()
                                     pts[i] = Vector2.new(pt.X, pt.Y)
                                     if not on or pt.Z < 0 then allOnScreen = false end
                                 end
-                                
                                 if allOnScreen then
                                     local edges = {
                                         {1,2}, {2,3}, {3,4}, {4,1},
@@ -420,22 +452,15 @@ local renderConn = RunService.RenderStepped:Connect(function()
                                     for i=1, 12 do box[i].Visible = false end
                                 end
                             else
-                                -- Modo 2D
                                 if Settings.BoxStyle == "Full" then
                                     local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
-                                    -- Top
                                     box[1].From = tl; box[1].To = tr; box[1].Visible = true
-                                    -- Bottom
                                     box[2].From = bl; box[2].To = br; box[2].Visible = true
-                                    -- Left
                                     box[3].From = tl; box[3].To = bl; box[3].Visible = true
-                                    -- Right
                                     box[4].From = tr; box[4].To = br; box[4].Visible = true
-                                    
                                     for i=1, 4 do box[i].Color = Settings.ESPColor; box[i].Thickness = Settings.BoxThickness end
                                     for i=5, 12 do box[i].Visible = false end
                                 else
-                                    -- Cornered
                                     local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
                                     box[1].From = tl; box[1].To = tl + Vector2.new(l, 0)
                                     box[2].From = tl; box[2].To = tl + Vector2.new(0, l)
@@ -489,14 +514,12 @@ local renderConn = RunService.RenderStepped:Connect(function()
                             data.Name.Position = Vector2.new(pos.X, y - 18)
                             data.Name.Color = Settings.ESPColor 
                         end
-                        
                         if Settings.Distance then 
                             data.Dist.Visible = true
                             data.Dist.Text = math.floor(mag) .. "m"
                             data.Dist.Position = Vector2.new(pos.X, y + height + 2)
                             data.Dist.Color = Settings.ESPColor 
                         end
-                        
                         if Settings.Tracers and char ~= player.Character then 
                             data.Tracer.Visible = true
                             data.Tracer.From = Vector2.new(camera.ViewportSize.X / 2, 0)
@@ -533,13 +556,22 @@ task.spawn(function()
     end
 end)
 
+-- Loop de Interação com Player (Seguir / Comer)
 task.spawn(function()
     while not isUnloaded do
-        if Settings.EatPlayer and Settings.SelectedPlayer and Settings.SelectedPlayer.Character and player.Character then
+        if Settings.SelectedPlayer and Settings.SelectedPlayer.Character and player.Character then
             local myHrp = player.Character:FindFirstChild("HumanoidRootPart")
             local targetHrp = Settings.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+            
             if myHrp and targetHrp then
-                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.5)
+                if Settings.FollowPlayer then
+                    -- Seguir Player: Distância fixa
+                    myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.5)
+                elseif Settings.EatPlayer then
+                    -- Comer Player: Grudado e oscilando para frente/trás
+                    local oscillation = math.sin(tick() * 15) * 1.3 -- Velocidade e amplitude do movimento
+                    myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 0.5 + oscillation)
+                end
             end
         end
         task.wait()
@@ -583,12 +615,13 @@ VisTab:CreateSlider({Name = "Alcance Máximo (M)", Flag = "MaxDistance", Min = 5
 VisTab:CreateLabel("Personalização")
 VisTab:CreateColorPicker({Name = "Cor do ESP", Flag = "ESPColor", Default = Settings.ESPColor, Callback = function(v) Settings.ESPColor = v end})
 
--- PESSOAL / SELF
+-- Exploits / SELF
 SelfTab:CreateToggle({Name = "Fly", Flag = "FlyEnabled", Default = false, Callback = function(v) Settings.FlyEnabled = v; if not v then disableFly() end end})
+SelfTab:CreateToggle({Name = "Fly Invisible", Flag = "FlyInvisible", Default = false, Callback = function(v) Settings.FlyInvisible = v updateCharacterVisibility() end})
 SelfTab:CreateKeybind({Name = "Keybind", Flag = "FlyKey", Default = Enum.KeyCode.CapsLock, Callback = function(key) Settings.FlyKey = key end})
 SelfTab:CreateSlider({Name = "Speed Fly", Flag = "FlySpeed", Min = 10, Max = 300, Default = 20, Callback = function(v) Settings.FlySpeed = v end})
 
--- JOGADORES / PLAYERS
+-- Players / PLAYERS
 local playerOptions = {"Nenhum"}
 for _, p in pairs(Players:GetPlayers()) do
     if p ~= player then table.insert(playerOptions, p.DisplayName or p.Name) end
@@ -633,6 +666,7 @@ PlayersTab:CreateButton({
 })
 PlayersTab:CreateToggle({Name = "Spectate", Flag = "SpectateEnabled", Default = false, Callback = function(v) Settings.SpectateEnabled = v end})
 PlayersTab:CreateToggle({Name = "Teleport To Me", Flag = "PuxarLoop", Default = false, Callback = function(v) Settings.PuxarLoop = v end})
+PlayersTab:CreateToggle({Name = "Seguir Player", Flag = "FollowPlayer", Default = false, Callback = function(v) Settings.FollowPlayer = v end})
 PlayersTab:CreateToggle({Name = "Comer Player", Flag = "EatPlayer", Default = false, Callback = function(v) Settings.EatPlayer = v end})
 
 -- MISC
