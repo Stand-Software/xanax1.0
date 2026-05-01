@@ -10,7 +10,7 @@ local camera = workspace.CurrentCamera
 local Settings = {
     -- Aimbot
     AimbotEnabled = false,
-    AimbotNPCs = false, -- NOVO
+    AimbotNPCs = false,
     AimMethod = "Mouse",
     TeamCheck = false,
     ShowFOV = false,
@@ -23,13 +23,14 @@ local Settings = {
     -- ESP / Visuals
     Box = false,
     BoxMode = "2D",
+    BoxStyle = "Cornered", -- NOVO: "Cornered" ou "Full"
     Skeleton = false,
     Tracers = false,
     Distance = false,
     Names = false,
     Health = false,
     LocalPlayer = false,
-    VisualsNPCs = false, -- NOVO
+    VisualsNPCs = false,
     ESPColor = Color3.fromRGB(255, 0, 85),
     Thickness = 1,
     BoxThickness = 2,
@@ -233,7 +234,9 @@ end
 local function getClosestTarget()
     local target = nil
     local shortestDistance = math.huge
-    local mousePos = UserInputService:GetMouseLocation()
+    
+    -- Se o método for Camera, a origem da detecção é o centro da tela
+    local detectionOrigin = (Settings.AimMethod == "Camera") and (camera.ViewportSize / 2) or UserInputService:GetMouseLocation()
 
     local potentialTargets = GetValidTargets(true, Settings.AimbotNPCs)
 
@@ -252,8 +255,8 @@ local function getClosestTarget()
             if mag <= Settings.AimDistance then
                 local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
                 if onScreen then
-                    local distFromMouse = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if distFromMouse <= Settings.FOVRadius then
+                    local distFromOrigin = (Vector2.new(screenPos.X, screenPos.Y) - detectionOrigin).Magnitude
+                    if distFromOrigin <= Settings.FOVRadius then
                         if mag < shortestDistance then
                             target = part
                             shortestDistance = mag
@@ -300,7 +303,13 @@ local renderConn = RunService.RenderStepped:Connect(function()
     FOVCircle.Visible = Settings.ShowFOV
     FOVCircle.Radius = Settings.FOVRadius
     FOVCircle.Color = Settings.FOVColor
-    FOVCircle.Position = UserInputService:GetMouseLocation()
+    
+    -- Ajuste da posição do FOV baseado no método
+    if Settings.AimMethod == "Camera" then
+        FOVCircle.Position = camera.ViewportSize / 2
+    else
+        FOVCircle.Position = UserInputService:GetMouseLocation()
+    end
 
     if Settings.AimbotEnabled and isAiming then
         local target = getClosestTarget()
@@ -411,21 +420,38 @@ local renderConn = RunService.RenderStepped:Connect(function()
                                     for i=1, 12 do box[i].Visible = false end
                                 end
                             else
-                                local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
-                                box[1].From = tl; box[1].To = tl + Vector2.new(l, 0)
-                                box[2].From = tl; box[2].To = tl + Vector2.new(0, l)
-                                box[3].From = tr; box[3].To = tr - Vector2.new(l, 0)
-                                box[4].From = tr; box[4].To = tr + Vector2.new(0, l)
-                                box[5].From = bl; box[5].To = bl + Vector2.new(l, 0)
-                                box[6].From = bl; box[6].To = bl - Vector2.new(0, l)
-                                box[7].From = br; box[7].To = br - Vector2.new(l, 0)
-                                box[8].From = br; box[8].To = br - Vector2.new(0, l)
-                                for i=1, 8 do 
-                                    box[i].Visible = true
-                                    box[i].Color = Settings.ESPColor
-                                    box[i].Thickness = Settings.BoxThickness 
+                                -- Modo 2D
+                                if Settings.BoxStyle == "Full" then
+                                    local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
+                                    -- Top
+                                    box[1].From = tl; box[1].To = tr; box[1].Visible = true
+                                    -- Bottom
+                                    box[2].From = bl; box[2].To = br; box[2].Visible = true
+                                    -- Left
+                                    box[3].From = tl; box[3].To = bl; box[3].Visible = true
+                                    -- Right
+                                    box[4].From = tr; box[4].To = br; box[4].Visible = true
+                                    
+                                    for i=1, 4 do box[i].Color = Settings.ESPColor; box[i].Thickness = Settings.BoxThickness end
+                                    for i=5, 12 do box[i].Visible = false end
+                                else
+                                    -- Cornered
+                                    local tl, tr, bl, br = Vector2.new(x, y), Vector2.new(x + width, y), Vector2.new(x, y + height), Vector2.new(x + width, y + height)
+                                    box[1].From = tl; box[1].To = tl + Vector2.new(l, 0)
+                                    box[2].From = tl; box[2].To = tl + Vector2.new(0, l)
+                                    box[3].From = tr; box[3].To = tr - Vector2.new(l, 0)
+                                    box[4].From = tr; box[4].To = tr + Vector2.new(0, l)
+                                    box[5].From = bl; box[5].To = bl + Vector2.new(l, 0)
+                                    box[6].From = bl; box[6].To = bl - Vector2.new(0, l)
+                                    box[7].From = br; box[7].To = br - Vector2.new(l, 0)
+                                    box[8].From = br; box[8].To = br - Vector2.new(0, l)
+                                    for i=1, 8 do 
+                                        box[i].Visible = true
+                                        box[i].Color = Settings.ESPColor
+                                        box[i].Thickness = Settings.BoxThickness 
+                                    end
+                                    for i=9, 12 do box[i].Visible = false end
                                 end
-                                for i=9, 12 do box[i].Visible = false end
                             end
                         end
 
@@ -526,29 +552,35 @@ local playerRemovedConn = Players.PlayerRemoving:Connect(function(p) removeESP(p
 
 -- AIMBOT
 AimTab:CreateToggle({Name = "Aimbot", Flag = "AimbotEnabled", Default = false, Callback = function(v) Settings.AimbotEnabled = v end})
-AimTab:CreateToggle({Name = "Enable NPC", Flag = "AimbotNPCs", Default = false, Callback = function(v) Settings.AimbotNPCs = v end}) -- NOVO
-AimTab:CreateDropdown({Name = "Aim Method", Flag = "AimMethod", Options = {"Mouse", "Camera"}, Default = "Mouse", Callback = function(v) Settings.AimMethod = v end})
 AimTab:CreateToggle({Name = "Show FOV", Flag = "ShowFOV", Default = false, Callback = function(v) Settings.ShowFOV = v end})
+AimTab:CreateToggle({Name = "Enable NPC", Flag = "AimbotNPCs", Default = false, Callback = function(v) Settings.AimbotNPCs = v end})
 AimTab:CreateToggle({Name = "Team Check", Flag = "TeamCheck", Default = false, Callback = function(v) Settings.TeamCheck = v end})
 AimTab:CreateKeybind({Name = "Keybind", Flag = "AimKey", Default = Enum.UserInputType.MouseButton2, Callback = function(v) Settings.AimKey = v end})
+AimTab:CreateDropdown({Name = "Aim Method", Flag = "AimMethod", Options = {"Mouse", "Camera"}, Default = "Mouse", Callback = function(v) Settings.AimMethod = v end})
 AimTab:CreateSlider({Name = "Smoothing", Flag = "Smoothing", Min = 1, Max = 10, Default = 2, Callback = function(v) Settings.Smoothing = v end})
 AimTab:CreateSlider({Name = "Fov Radius", Flag = "FOVRadius", Min = 50, Max = 500, Default = 100, Callback = function(v) Settings.FOVRadius = v end})
 AimTab:CreateSlider({Name = "Alcance do Aim (M)", Flag = "AimDistance", Min = 50, Max = 2000, Default = 500, Callback = function(v) Settings.AimDistance = v end})
 AimTab:CreateColorPicker({Name = "Fov Color", Flag = "FOVColor", Default = Settings.FOVColor, Callback = function(v) Settings.FOVColor = v end})
 
 -- VISUALS
-VisTab:CreateLabel("Componentes Visuais")
+VisTab:CreateLabel("Elementos Visuais")
 VisTab:CreateToggle({Name = "Usernames", Flag = "Names", Default = false, Callback = function(v) Settings.Names = v end})
-VisTab:CreateToggle({Name = "Enable NPC", Flag = "VisualsNPCs", Default = false, Callback = function(v) Settings.VisualsNPCs = v end}) -- NOVO
-VisTab:CreateToggle({Name = "Box ESP", Flag = "Box", Default = false, Callback = function(v) Settings.Box = v end})
-VisTab:CreateDropdown({Name = "Box Mode", Flag = "BoxMode", Options = {"2D", "3D"}, Default = "2D", Callback = function(v) Settings.BoxMode = v end})
+VisTab:CreateToggle({Name = "Enable NPC", Flag = "VisualsNPCs", Default = false, Callback = function(v) Settings.VisualsNPCs = v end})
 VisTab:CreateToggle({Name = "Health Bar", Flag = "Health", Default = false, Callback = function(v) Settings.Health = v end})
 VisTab:CreateToggle({Name = "Skeleton", Flag = "Skeleton", Default = false, Callback = function(v) Settings.Skeleton = v end})
 VisTab:CreateToggle({Name = "Tracers", Flag = "Tracers", Default = false, Callback = function(v) Settings.Tracers = v end})
 VisTab:CreateToggle({Name = "Distance", Flag = "Distance", Default = false, Callback = function(v) Settings.Distance = v end})
-VisTab:CreateLabel("Filtros")
+
+VisTab:CreateLabel("Configurações de Box")
+VisTab:CreateToggle({Name = "Box ESP", Flag = "Box", Default = false, Callback = function(v) Settings.Box = v end})
+VisTab:CreateDropdown({Name = "Box Mode", Flag = "BoxMode", Options = {"2D", "3D"}, Default = "2D", Callback = function(v) Settings.BoxMode = v end})
+VisTab:CreateDropdown({Name = "Box Style (2D)", Flag = "BoxStyle", Options = {"Cornered", "Full"}, Default = "Full", Callback = function(v) Settings.BoxStyle = v end})
+
+VisTab:CreateLabel("Filtros e Alcance")
 VisTab:CreateToggle({Name = "Show Local Player", Flag = "LocalPlayer", Default = false, Callback = function(v) Settings.LocalPlayer = v end})
 VisTab:CreateSlider({Name = "Alcance Máximo (M)", Flag = "MaxDistance", Min = 50, Max = 3500, Default = 500, Callback = function(v) Settings.MaxDistance = v end})
+
+VisTab:CreateLabel("Personalização")
 VisTab:CreateColorPicker({Name = "Cor do ESP", Flag = "ESPColor", Default = Settings.ESPColor, Callback = function(v) Settings.ESPColor = v end})
 
 -- PESSOAL / SELF
