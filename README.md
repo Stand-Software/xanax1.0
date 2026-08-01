@@ -148,8 +148,8 @@ local function LoadConfig()
     end
 end
 
--- Carregando Hub
-Hub = loadstring(game:HttpGet("https://raw.githubusercontent.com/Stand-Software/hub/refs/heads/main/README.md"))()
+-- Carregando Hub (Substitua o link abaixo pelo seu link do Pastebin raw)
+Hub = loadstring(game:HttpGet("https://pastebin.com/raw/cKgUQXMr"))()
 local Window = Hub:CreateWindow({Title = "Xanax Hub V2"})
 local AimTab = Window:CreateTab("Aimbot")
 local VisTab = Window:CreateTab("Visuals")
