@@ -240,38 +240,137 @@ local function enableFly()
     end)
 end
 
-local function toggleFreecam(enable)
-    Settings.IsFreecamming = enable
+local previousMouseBehavior = Enum.MouseBehavior.Default
+local previousMouseIconEnabled = true
+
+local function teleportCharacterToFreecamLook()
+    if not Settings.IsFreecamming then return end
+
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hrp or not hum or hum.Health <= 0 then return end
+
+    local origin = camera.CFrame.Position
+    local direction = camera.CFrame.LookVector * 5000
+
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {char, camera}
+    rayParams.IgnoreWater = false
+
+    local result = workspace:Raycast(origin, direction, rayParams)
+    if not result then return end
+
+    -- Coloca o personagem um pouco acima do ponto atingido para evitar ficar preso no chão/parede.
+    local targetPosition = result.Position + Vector3.new(0, 3, 0)
+
+    -- Faz o personagem olhar aproximadamente na mesma direção horizontal da freecam.
+    local look = camera.CFrame.LookVector
+    local flatLook = Vector3.new(look.X, 0, look.Z)
+    if flatLook.Magnitude < 0.001 then
+        flatLook = hrp.CFrame.LookVector
+        flatLook = Vector3.new(flatLook.X, 0, flatLook.Z)
+    end
+    if flatLook.Magnitude < 0.001 then
+        flatLook = Vector3.new(0, 0, -1)
+    end
+
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+    char:PivotTo(CFrame.lookAt(targetPosition, targetPosition + flatLook.Unit))
+end
+
+local function toggleFreecam(enable)
+    Settings.IsFreecamming = enable
+
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
     if enable then
         if hrp then hrp.Anchored = true end
+
+        previousMouseBehavior = UserInputService.MouseBehavior
+        previousMouseIconEnabled = UserInputService.MouseIconEnabled
+
         camera.CameraType = Enum.CameraType.Scriptable
+
+        -- Freecam estilo primeira pessoa: mouse sempre preso no centro.
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
+
         local look = camera.CFrame.LookVector
-        camRotX, camRotY = math.asin(look.Y), math.atan2(-look.X, -look.Z)
+        camRotX = math.asin(math.clamp(look.Y, -1, 1))
+        camRotY = math.atan2(-look.X, -look.Z)
+
+        if freecamConnection then
+            freecamConnection:Disconnect()
+            freecamConnection = nil
+        end
+
         freecamConnection = RunService.RenderStepped:Connect(function()
             if not Settings.IsFreecamming then return end
-            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-                UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-                local delta = UserInputService:GetMouseDelta()
-                camRotY = camRotY - (delta.X * 0.005)
-                camRotX = math.clamp(camRotX - (delta.Y * 0.005), -math.rad(89), math.rad(89))
-            else UserInputService.MouseBehavior = Enum.MouseBehavior.Default end
-            camera.CFrame = CFrame.new(camera.CFrame.Position) * CFrame.Angles(0, camRotY, 0) * CFrame.Angles(camRotX, 0, 0)
+
+            -- Mantém o mouse travado e usa o delta diretamente.
+            -- Não precisa mais segurar MouseButton2.
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+
+            local delta = UserInputService:GetMouseDelta()
+            camRotY = camRotY - (delta.X * 0.005)
+            camRotX = math.clamp(
+                camRotX - (delta.Y * 0.005),
+                -math.rad(89),
+                math.rad(89)
+            )
+
+            camera.CFrame =
+                CFrame.new(camera.CFrame.Position)
+                * CFrame.Angles(0, camRotY, 0)
+                * CFrame.Angles(camRotX, 0, 0)
+
             local moveDir = Vector3.new()
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += Vector3.new(0,0,-1) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir += Vector3.new(0,0,1) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir += Vector3.new(-1,0,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += Vector3.new(1,0,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir += Vector3.new(0,1,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir += Vector3.new(0,-1,0) end
-            local speed = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) and (Settings.FreecamSpeed * 2) or Settings.FreecamSpeed
-            camera.CFrame = camera.CFrame + camera.CFrame:VectorToWorldSpace(moveDir) * (speed / 10)
+
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDir += Vector3.new(0, 0, -1)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDir += Vector3.new(0, 0, 1)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDir += Vector3.new(-1, 0, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDir += Vector3.new(1, 0, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+                moveDir += Vector3.new(0, 1, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+                moveDir += Vector3.new(0, -1, 0)
+            end
+
+            local speed =
+                UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+                and (Settings.FreecamSpeed * 2)
+                or Settings.FreecamSpeed
+
+            if moveDir.Magnitude > 0 then
+                camera.CFrame =
+                    camera.CFrame
+                    + camera.CFrame:VectorToWorldSpace(moveDir.Unit) * (speed / 10)
+            end
         end)
     else
         if hrp then hrp.Anchored = false end
-        if freecamConnection then freecamConnection:Disconnect(); freecamConnection = nil end
-        camera.CameraType, UserInputService.MouseBehavior = Enum.CameraType.Custom, Enum.MouseBehavior.Default
+
+        if freecamConnection then
+            freecamConnection:Disconnect()
+            freecamConnection = nil
+        end
+
+        camera.CameraType = Enum.CameraType.Custom
+        UserInputService.MouseBehavior = previousMouseBehavior
+        UserInputService.MouseIconEnabled = previousMouseIconEnabled
     end
 end
 
@@ -298,14 +397,36 @@ end
 
 local inputBeganConn = UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
-    if input.UserInputType == Settings.AimKey or input.KeyCode == Settings.AimKey then isAiming = true end
+
+    -- Clique esquerdo durante o Freecam:
+    -- teleporta o personagem para o ponto que a câmera está mirando.
+    if Settings.IsFreecamming and input.UserInputType == Enum.UserInputType.MouseButton1 then
+        teleportCharacterToFreecamLook()
+        return
+    end
+
+    if input.UserInputType == Settings.AimKey or input.KeyCode == Settings.AimKey then
+        isAiming = true
+    end
+
     if Settings.FlyEnabled and input.KeyCode == Settings.FlyKey then
         Settings.IsFlying = not Settings.IsFlying
-        if Settings.IsFlying then if Settings.IsFreecamming then toggleFreecam(false) end; enableFly() else disableFly() end
+        if Settings.IsFlying then
+            if Settings.IsFreecamming then toggleFreecam(false) end
+            enableFly()
+        else
+            disableFly()
+        end
     end
+
     if Settings.FreecamEnabled and input.KeyCode == Settings.FreecamKey then
         Settings.IsFreecamming = not Settings.IsFreecamming
-        if Settings.IsFreecamming then if Settings.IsFlying then disableFly() end; toggleFreecam(true) else toggleFreecam(false) end
+        if Settings.IsFreecamming then
+            if Settings.IsFlying then disableFly() end
+            toggleFreecam(true)
+        else
+            toggleFreecam(false)
+        end
     end
 end)
 
